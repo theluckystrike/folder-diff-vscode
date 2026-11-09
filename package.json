@@ -1,0 +1,344 @@
+{
+  "name": "zovo-folder-diff",
+  "displayName": "Folder Compare & Directory Diff - Compare Files, Folders, Word, Excel & Binary",
+  "description": "Free and offline. Compare two folders side by side with clear Left and Right panels, then open a diff for any file: text, Word (.docx, .odt, .doc), Excel (.xlsx, .xls, .ods), CSV, Parquet, PDF and binary files. Copy or delete with a preview, export the result, compare a folder with a Git branch or tag.",
+  "version": "0.1.0",
+  "publisher": "zovo",
+  "license": "MIT",
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#16202E",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=18"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "folder compare",
+    "compare folders",
+    "diff folders",
+    "directory compare",
+    "compare files",
+    "directory diff",
+    "folder diff",
+    "file compare",
+    "compare directories",
+    "diff",
+    "compare",
+    "word diff",
+    "excel diff",
+    "docx diff",
+    "xlsx compare",
+    "pdf diff",
+    "binary diff",
+    "sync folders",
+    "git diff",
+    "offline"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Comparing folders, copying and deleting work in Restricted Mode. Compare with a Git ref runs git, so it needs a trusted workspace."
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "folderDiff.compareSelected",
+        "title": "Compare Selected Folders",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.compareFolders",
+        "title": "Compare Two Folders...",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.compareWith",
+        "title": "Compare Folder With...",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.compareWithGitRef",
+        "title": "Compare Folder with Git Branch or Tag...",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.openSaved",
+        "title": "Open Saved Compare...",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.threeWay",
+        "title": "Three-Way Folder Compare and Merge...",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.trySample",
+        "title": "Try It on Sample Folders",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.openWalkthrough",
+        "title": "Get Started",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.supportDeveloper",
+        "title": "Support the developer",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.moreViewers",
+        "title": "More free tools",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.unlockWithSponsors",
+        "title": "Zovo: Unlock Pro with GitHub Sponsors",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.enterLicenseKey",
+        "title": "Zovo: Enter license key",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.getPro",
+        "title": "Zovo: Get Pro",
+        "category": "Folder Diff"
+      },
+      {
+        "command": "folderDiff.removeLicense",
+        "title": "Zovo: Remove license from this editor",
+        "category": "Folder Diff"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "folderDiff.compareSelected",
+          "when": "explorerResourceIsFolder && listMultiSelection",
+          "group": "3_compare@1"
+        },
+        {
+          "command": "folderDiff.compareWith",
+          "when": "explorerResourceIsFolder && !listMultiSelection",
+          "group": "3_compare@1"
+        },
+        {
+          "command": "folderDiff.compareWithGitRef",
+          "when": "explorerResourceIsFolder && !listMultiSelection && isWorkspaceTrusted",
+          "group": "3_compare@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "folderDiff.compareSelected",
+          "when": "false"
+        },
+        {
+          "command": "folderDiff.compareWithGitRef",
+          "when": "isWorkspaceTrusted"
+        },
+        {
+          "command": "folderDiff.unlockWithSponsors",
+          "when": "folderDiff.proEnabled"
+        },
+        {
+          "command": "folderDiff.enterLicenseKey",
+          "when": "folderDiff.proEnabled"
+        },
+        {
+          "command": "folderDiff.getPro",
+          "when": "folderDiff.proEnabled"
+        },
+        {
+          "command": "folderDiff.removeLicense",
+          "when": "folderDiff.proEnabled"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Folder Diff",
+      "properties": {
+        "folderDiff.compareMode": {
+          "type": "string",
+          "enum": [
+            "content",
+            "quick"
+          ],
+          "enumDescriptions": [
+            "Files with the same size are compared byte by byte (in the background). Exact.",
+            "Size and modified time only. Fast on huge trees and network drives, but a copy with a new time shows as changed."
+          ],
+          "default": "content",
+          "description": "How files are compared. The toolbar can change it per compare."
+        },
+        "folderDiff.exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "node_modules/",
+            ".git/",
+            "dist/",
+            ".DS_Store",
+            "Thumbs.db"
+          ],
+          "description": "Names and globs to leave out of every compare. A name matches at any depth. A trailing / matches folders only. Example: *.log, build/, src/**/*.map"
+        },
+        "folderDiff.useGitignore": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also leave out what .gitignore files in the compared folders ignore."
+        },
+        "folderDiff.followSymlinks": {
+          "type": "boolean",
+          "default": false,
+          "description": "Follow symbolic links into folders and files. Off: a link is compared by its target text, and link loops are harmless. On: loops are detected and reported."
+        },
+        "folderDiff.showSame": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show equal files when a compare opens. Off shows the differences only; the toolbar switch changes it per compare."
+        },
+        "folderDiff.mtimeToleranceSeconds": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 7200,
+          "description": "Quick mode: modified times this close count as equal (FAT and network drives store times in 2 second steps)."
+        },
+        "folderDiff.maxTextDiffMB": {
+          "type": "number",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 2048,
+          "description": "Text files larger than this open in the byte compare instead of the text diff editor."
+        },
+        "folderDiff.maxConvertMB": {
+          "type": "number",
+          "default": 200,
+          "minimum": 1,
+          "maximum": 2048,
+          "description": "Largest Word, Excel, Parquet or PDF file that is turned into text for the diff."
+        },
+        "folderDiff.maxCompareRows": {
+          "type": "number",
+          "default": 100000,
+          "minimum": 100,
+          "maximum": 5000000,
+          "description": "Rows per sheet or table in the Excel, CSV and Parquet diff."
+        },
+        "folderDiff.convertTimeoutSec": {
+          "type": "number",
+          "default": 120,
+          "minimum": 10,
+          "maximum": 1800,
+          "description": "Time limit for turning one document into text."
+        },
+        "folderDiff.deleteToTrash": {
+          "type": "boolean",
+          "default": true,
+          "description": "Delete moves files to the Trash or Recycle Bin. Off deletes them for good (the confirmation says which)."
+        },
+        "folderDiff.askForRating": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask for a Marketplace rating after 2 compares that finished without an error, in sessions at least 4 hours apart. \"Later\" asks one more time after 7 days, \"No thanks\" never asks again. It never asks after an error or more than 2 times. Nothing is sent anywhere."
+        },
+        "folderDiff.showSupportLinks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the small Rate, More free tools and Sponsor links at the bottom of the compare view. Nothing is sent anywhere."
+        }
+      }
+    },
+    "walkthroughs": [
+      {
+        "id": "folderDiff.start",
+        "title": "Get started with Folder Diff",
+        "description": "Compare two folders, open the diff of any file, copy what you need.",
+        "steps": [
+          {
+            "id": "pick",
+            "title": "Compare two folders",
+            "description": "Select two folders in the Explorer (Ctrl or Cmd click), right-click and choose Compare Selected Folders. Or right-click one folder and choose Compare Folder With.\n[Try it on sample folders](command:folderDiff.trySample)",
+            "media": {
+              "image": "images/compare.png",
+              "altText": "Two release folders compared: Left and Right panels with full paths, changed, only left and only right files."
+            },
+            "completionEvents": [
+              "onCommand:folderDiff.trySample"
+            ]
+          },
+          {
+            "id": "open",
+            "title": "Open the diff of a file",
+            "description": "Double-click a changed file. Text opens in the VS Code diff editor. Word, Excel, CSV, Parquet and PDF files open as text side by side. Other files show the bytes that differ.",
+            "media": {
+              "markdown": "walkthrough/open.md"
+            }
+          },
+          {
+            "id": "copy",
+            "title": "Copy, delete and export",
+            "description": "Select rows and press Copy to right, Copy to left or Delete. A confirmation lists every file first. Export saves the result as Markdown, CSV or HTML.",
+            "media": {
+              "markdown": "walkthrough/copy.md"
+            }
+          },
+          {
+            "id": "settings",
+            "title": "Ignore rules and compare mode",
+            "description": "node_modules, .git and dist are left out by default, plus what .gitignore ignores. Content mode compares bytes; Quick mode uses size and time.\n[Open settings](command:workbench.action.openSettings?%5B%22folderDiff%22%5D)",
+            "media": {
+              "markdown": "walkthrough/settings.md"
+            },
+            "completionEvents": [
+              "onCommand:workbench.action.openSettings"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node scripts/build.js --production",
+    "test": "node scripts/build.js --production && node --test \"test/*.test.js\" \"test/*.test.mjs\"",
+    "package": "npm run build && npx -y @vscode/vsce package --no-dependencies -o dist/"
+  },
+  "devDependencies": {
+    "@types/vscode": "~1.90.0",
+    "@xmldom/xmldom": "^0.8.10",
+    "esbuild": "0.28.2",
+    "hyparquet": "1.32.0",
+    "hyparquet-compressors": "1.1.3",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "5.7.284",
+    "word-extractor": "^1.0.4",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "homepage": "https://github.com/theluckystrike/folder-diff-vscode#readme",
+  "bugs": {
+    "url": "https://github.com/theluckystrike/folder-diff-vscode/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/theluckystrike/folder-diff-vscode"
+  },
+  "sponsor": {
+    "url": "https://github.com/sponsors/theluckystrike"
+  }
+}

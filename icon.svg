@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="22" fill="#16202E"/>
+  <!-- left folder -->
+  <path d="M12 38 h20 l6 6 h18 a4 4 0 0 1 4 4 v46 a4 4 0 0 1 -4 4 h-40 a4 4 0 0 1 -4 -4 v-52 a4 4 0 0 1 4 -4 z" fill="#E5534B"/>
+  <path d="M8 50 h52 v44 a4 4 0 0 1 -4 4 h-44 a4 4 0 0 1 -4 -4 z" fill="#F47067"/>
+  <!-- right folder -->
+  <path d="M72 38 h20 l6 6 h18 a4 4 0 0 1 4 4 v46 a4 4 0 0 1 -4 4 h-40 a4 4 0 0 1 -4 -4 v-52 a4 4 0 0 1 4 -4 z" fill="#2EA043"/>
+  <path d="M68 50 h52 v44 a4 4 0 0 1 -4 4 h-44 a4 4 0 0 1 -4 -4 z" fill="#3FB950"/>
+  <!-- diff lines -->
+  <g stroke-linecap="round" stroke-width="5">
+    <line x1="17" y1="63" x2="51" y2="63" stroke="#FFFFFF" opacity="0.95"/>
+    <line x1="17" y1="74" x2="43" y2="74" stroke="#FFD8D3" opacity="0.95"/>
+    <line x1="17" y1="85" x2="47" y2="85" stroke="#FFFFFF" opacity="0.95"/>
+    <line x1="77" y1="63" x2="111" y2="63" stroke="#FFFFFF" opacity="0.95"/>
+    <line x1="77" y1="74" x2="107" y2="74" stroke="#D6FFD9" opacity="0.95"/>
+    <line x1="77" y1="85" x2="99" y2="85" stroke="#FFFFFF" opacity="0.95"/>
+  </g>
+  <!-- compare arrows -->
+  <g fill="#F2CC60">
+    <path d="M52 20 h20 v-6 l12 10 -12 10 v-6 h-20 z"/>
+    <path d="M76 112 h-20 v6 l-12 -10 12 -10 v6 h20 z"/>
+  </g>
+</svg>

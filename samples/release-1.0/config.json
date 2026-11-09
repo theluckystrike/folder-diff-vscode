@@ -1,0 +1,4 @@
+{
+  "currency": "USD",
+  "regions": ["North", "South", "East", "West"]
+}
