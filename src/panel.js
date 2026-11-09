@@ -10,6 +10,7 @@ const { rollup, countStatuses } = require('./core/compare');
 const { planCopy, planDelete, planSync } = require('./core/plan');
 const { exportResult, fmtSize, summaryLine } = require('./core/export');
 const git = require('./core/git');
+const { guardDest } = require('./core/dest');
 const { showLinks, commandUris } = require('./support');
 
 const VIEW = 'folderDiff.compare';
@@ -241,6 +242,7 @@ class ComparePanel {
     for (const it of items) {
       const dst = abs(dstRoot, it.rel);
       try {
+        await guardDest(dstRoot, dst);
         await fs.promises.mkdir(path.dirname(dst), { recursive: true });
         if (from === 'left' && this.git) {
           const e = this.entries.find(x => x.l && x.l.rel === it.srcRel);

@@ -9,6 +9,7 @@ const { createRatingPrompt } = require('./rate');
 const { registerSupport } = require('./support');
 const { createPro } = require('./pro');
 const git = require('./core/git');
+const { guardDest } = require('./core/dest');
 const { plan3 } = require('./core/plan');
 const { filesEqual } = require('./core/bytes');
 
@@ -217,6 +218,7 @@ async function threeWay(context, pro) {
       if (a.action === 'delete') await vscode.workspace.fs.delete(vscode.Uri.file(dst), { recursive: true, useTrash: settings().deleteToTrash });
       else {
         const src = a.action === 'copyLeft' ? path.join(left.fsPath, ...a.leftRel.split('/')) : path.join(right.fsPath, ...a.rightRel.split('/'));
+        await guardDest(base.fsPath, dst);
         await fs.promises.mkdir(path.dirname(dst), { recursive: true });
         await fs.promises.copyFile(src, dst);
         const st = await fs.promises.stat(src);
