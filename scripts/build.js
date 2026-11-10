@@ -5,7 +5,7 @@ const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '..');
-const prod = process.argv.includes('--production');
+const prod = process.argv.includes('--production') || process.argv.includes('production');
 const common = { bundle: true, minify: prod, sourcemap: false, legalComments: 'none', logLevel: 'warning', absWorkingDir: root, metafile: true };
 const ALLOWED = /^(\(?(MIT|ISC|BSD-2-Clause|BSD-3-Clause|Apache-2\.0|Zlib|0BSD|BlueOak-1\.0\.0|Unlicense)( (OR|AND) (MIT|ISC|BSD-2-Clause|BSD-3-Clause|Apache-2\.0|Zlib|GPL-3\.0-or-later))*\)?)$/;
 

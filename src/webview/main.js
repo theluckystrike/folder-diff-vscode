@@ -6,7 +6,7 @@
   const app = document.getElementById('app');
 
   const S = {
-    left: null, right: null, git: false, mode: 'content', pro: [],
+    left: null, right: null, git: false, mode: 'content', pro: { show: true, licensed: false, tries: {} },
     rows: [], paths: [], counts: null, info: null,
     showSame: false, statusFilter: null, nameFilter: '',
     collapsed: new Set(), visible: [], sel: new Set(), anchor: -1, focus: -1,
@@ -73,11 +73,20 @@
     ['CSV (.csv)', () => vscode.postMessage({ type: 'export', format: 'csv', onlyDiff: !S.showSame })],
     ['HTML (.html)', () => vscode.postMessage({ type: 'export', format: 'html', onlyDiff: !S.showSame })],
   ]));
-  const proMark = name => (S.pro.includes(name) ? ' (Pro)' : '');
-  const bMore = btn('More ▾', 'Sync, document report, saved compares, ignore rules', ev => menu(ev.currentTarget, [
-    ['Sync folders with a preview...' + proMark('Folder sync'), () => vscode.postMessage({ type: 'sync' })],
-    ['Report of document changes' + proMark('Document change report'), () => vscode.postMessage({ type: 'report' })],
-    ['Save this compare...' + proMark('Saved compares'), () => vscode.postMessage({ type: 'saveSession' })],
+  // Zovo Pro tools: a short note with the free tries left, only inside the menu; hidden by folderDiff.showProTools.
+  const proMark = f => {
+    if (S.pro.licensed) return '';
+    const n = S.pro.tries && typeof S.pro.tries[f] === 'number' ? S.pro.tries[f] : 3;
+    return n > 0 ? `  (Zovo Pro, ${n} free ${n === 1 ? 'try' : 'tries'} left)` : '  (Zovo Pro)';
+  };
+  const proItems = () => (S.pro.show === false ? [] : [
+    ['Sync folders with a preview...' + proMark('sync'), () => vscode.postMessage({ type: 'sync' })],
+    ['Report of document changes' + proMark('docReport'), () => vscode.postMessage({ type: 'report' })],
+    ['Three-way compare and merge...' + proMark('merge3'), () => vscode.postMessage({ type: 'threeWay' })],
+  ]);
+  const bMore = btn('More ▾', 'Saved compares, ignore rules, sync and reports', ev => menu(ev.currentTarget, [
+    ...proItems(),
+    ['Save this compare...', () => vscode.postMessage({ type: 'saveSession' })],
     ['Ignore rules...', () => vscode.postMessage({ type: 'editExclude' })],
     ['Expand all', () => { S.collapsed.clear(); save(); rebuild(); }],
     ['Collapse all', () => { S.rows.forEach((r, i) => { if (r.k === 'dir') S.collapsed.add(S.paths[i]); }); save(); rebuild(); }],
@@ -357,7 +366,7 @@
     if (!m || typeof m !== 'object') return;
     switch (m.type) {
       case 'init':
-        S.left = m.left; S.right = m.right; S.git = m.git; S.mode = m.mode; S.pro = m.pro || [];
+        S.left = m.left; S.right = m.right; S.git = m.git; S.mode = m.mode; if (m.pro && typeof m.pro === 'object') S.pro = m.pro;
         if (!S.inited) S.showSame = typeof S.saved.showSame === 'boolean' ? S.saved.showSame : !!m.showSame;
         S.inited = true;
         showSameBox.checked = S.showSame;
@@ -365,6 +374,9 @@
         spacer.style.height = '0px'; rowsBox.textContent = ''; renderChips(); renderEmpty();
         setSides();
         setProgress('Reading both folders...', null, true);
+        break;
+      case 'pro':
+        if (m.pro && typeof m.pro === 'object') S.pro = m.pro;
         break;
       case 'progress':
         if (m.phase === 'scan') setProgress(`Reading folders: ${fmtNum(m.done)} entries on the ${m.side} side...`, null, true);

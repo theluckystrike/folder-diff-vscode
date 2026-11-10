@@ -9,7 +9,7 @@ const { createRatingPrompt } = require('./rate');
 const { registerSupport } = require('./support');
 const { createPro } = require('./pro');
 const git = require('./core/git');
-const { guardDest } = require('./core/dest');
+const { guardDest, guardDelete } = require('./core/dest');
 const { plan3 } = require('./core/plan');
 const { filesEqual } = require('./core/bytes');
 
@@ -71,9 +71,13 @@ function scanOnce(context, left, right, s, token) {
 }
 
 function activate(context) {
-  rating = createRatingPrompt({ vscode, context, extensionId: EXT_ID, section: 'folderDiff', name: 'Folder Diff' });
+  rating = createRatingPrompt({ vscode, context, extensionId: EXT_ID, section: 'folderDiff', name: 'Folder Compare' });
   registerSupport({ vscode, context, prefix: 'folderDiff', selfId: EXT_ID });
   const pro = createPro({ vscode, context });
+  context.subscriptions.push(vscode.window.registerUriHandler({ handleUri: (uri) => pro.handleUri(uri) }));
+  const refreshPro = () => { for (const p of panels) p.post({ type: 'pro', pro: pro.state() }); };
+  context.subscriptions.push(pro.onDidChange(() => refreshPro()));
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('folderDiff.showProTools')) refreshPro(); }));
   const sessions = sessionsStore(context);
   const panels = new Set();
   let current = null;
@@ -90,9 +94,9 @@ function activate(context) {
 
   async function compareDirs(a, b) {
     if (!a || !b) return;
-    if (a.scheme !== 'file' || b.scheme !== 'file') { vscode.window.showInformationMessage('Folder Diff compares folders on this computer (or in a Remote window, on that machine).'); return; }
-    if (!(await isFolder(a)) || !(await isFolder(b))) { vscode.window.showInformationMessage('Folder Diff: pick two folders. To compare two files, select them and use "Compare Selected".'); return; }
-    if (path.resolve(a.fsPath) === path.resolve(b.fsPath)) { vscode.window.showInformationMessage('Folder Diff: that is the same folder twice. Pick two different folders.'); return; }
+    if (a.scheme !== 'file' || b.scheme !== 'file') { vscode.window.showInformationMessage('Folder Compare compares folders on this computer (or in a Remote window, on that machine).'); return; }
+    if (!(await isFolder(a)) || !(await isFolder(b))) { vscode.window.showInformationMessage('Folder Compare: pick two folders. To compare two files, select them and use "Compare Selected".'); return; }
+    if (path.resolve(a.fsPath) === path.resolve(b.fsPath)) { vscode.window.showInformationMessage('Folder Compare: that is the same folder twice. Pick two different folders.'); return; }
     openCompare({ left: { kind: 'dir', path: a.fsPath }, right: { kind: 'dir', path: b.fsPath } });
   }
 
@@ -102,50 +106,49 @@ function activate(context) {
     vscode.commands.registerCommand('folderDiff.compareSelected', async (uri, uris) => {
       const list = Array.isArray(uris) ? uris.filter(u => u instanceof vscode.Uri) : [];
       if (list.length === 2) return compareDirs(list[0], list[1]);
-      if (list.length > 2) return vscode.window.showInformationMessage('Folder Diff: select exactly two folders.');
-      const a = uri instanceof vscode.Uri ? uri : await pickFolder('Folder Diff: pick the left folder', wsDefault());
+      if (list.length > 2) return vscode.window.showInformationMessage('Folder Compare: select exactly two folders.');
+      const a = uri instanceof vscode.Uri ? uri : await pickFolder('Folder Compare: pick the left folder', wsDefault());
       if (!a) return undefined;
-      const b = await pickFolder(`Folder Diff: compare ${path.basename(a.fsPath)} with`, vscode.Uri.file(path.dirname(a.fsPath)));
+      const b = await pickFolder(`Folder Compare: compare ${path.basename(a.fsPath)} with`, vscode.Uri.file(path.dirname(a.fsPath)));
       return compareDirs(a, b);
     }),
     vscode.commands.registerCommand('folderDiff.compareFolders', async () => {
-      const a = await pickFolder('Folder Diff: pick the left folder', wsDefault());
+      const a = await pickFolder('Folder Compare: pick the left folder', wsDefault());
       if (!a) return undefined;
-      const b = await pickFolder(`Folder Diff: compare ${path.basename(a.fsPath)} with (right folder)`, vscode.Uri.file(path.dirname(a.fsPath)));
+      const b = await pickFolder(`Folder Compare: compare ${path.basename(a.fsPath)} with (right folder)`, vscode.Uri.file(path.dirname(a.fsPath)));
       return compareDirs(a, b);
     }),
     vscode.commands.registerCommand('folderDiff.compareWith', async (uri) => {
-      const a = uri instanceof vscode.Uri ? uri : await pickFolder('Folder Diff: pick the left folder', wsDefault());
+      const a = uri instanceof vscode.Uri ? uri : await pickFolder('Folder Compare: pick the left folder', wsDefault());
       if (!a) return undefined;
-      const b = await pickFolder(`Folder Diff: compare ${path.basename(a.fsPath)} with (right folder)`, vscode.Uri.file(path.dirname(a.fsPath)));
+      const b = await pickFolder(`Folder Compare: compare ${path.basename(a.fsPath)} with (right folder)`, vscode.Uri.file(path.dirname(a.fsPath)));
       return compareDirs(a, b);
     }),
     vscode.commands.registerCommand('folderDiff.compareWithGitRef', async (uri) => {
       if (!vscode.workspace.isTrusted) return vscode.window.showInformationMessage('Compare with a Git ref runs git, so it needs a trusted workspace. Trust this folder first.');
-      const dir = uri instanceof vscode.Uri ? uri : await pickFolder('Folder Diff: pick a folder in a Git repository', wsDefault());
+      const dir = uri instanceof vscode.Uri ? uri : await pickFolder('Folder Compare: pick a folder in a Git repository', wsDefault());
       if (!dir || dir.scheme !== 'file') return undefined;
       const refs = await git.listRefs(dir.fsPath);
-      if (!refs.ok) return vscode.window.showWarningMessage('Folder Diff: ' + refs.error);
+      if (!refs.ok) return vscode.window.showWarningMessage('Folder Compare: ' + refs.error);
       const items = [{ label: 'HEAD', description: 'the last commit' }, ...refs.refs.map(r => ({ label: r.name, description: `${r.type === 'tag' ? 'tag' : r.name.includes('/') && !r.name.startsWith('refs') ? 'branch' : 'branch'} ${r.date || ''}`.trim() })),
         { label: '$(edit) Type a ref or commit...', description: 'for example HEAD~3 or a commit id', custom: true }];
-      const pick = await vscode.window.showQuickPick(items, { title: `Folder Diff: compare ${path.basename(dir.fsPath)} with`, placeHolder: 'Pick a branch, tag or HEAD' });
+      const pick = await vscode.window.showQuickPick(items, { title: `Folder Compare: compare ${path.basename(dir.fsPath)} with`, placeHolder: 'Pick a branch, tag or HEAD' });
       if (!pick) return undefined;
       let ref = pick.label;
-      if (pick.custom) { ref = (await vscode.window.showInputBox({ title: 'Folder Diff: Git ref', prompt: 'A branch, tag, HEAD~n or a commit id' })) || ''; if (!ref) return undefined; }
+      if (pick.custom) { ref = (await vscode.window.showInputBox({ title: 'Folder Compare: Git ref', prompt: 'A branch, tag, HEAD~n or a commit id' })) || ''; if (!ref) return undefined; }
       const ok = await git.resolveRef(dir.fsPath, ref);
-      if (!ok.ok) return vscode.window.showWarningMessage('Folder Diff: ' + ok.error);
+      if (!ok.ok) return vscode.window.showWarningMessage('Folder Compare: ' + ok.error);
       openCompare({ left: { kind: 'git', cwd: dir.fsPath, ref }, right: { kind: 'dir', path: dir.fsPath } });
       return undefined;
     }),
     vscode.commands.registerCommand('folderDiff.openSaved', async () => {
-      if (!(await pro.allow('Saved compares', 'Save pairs of folders and open them again later.'))) return undefined;
       const list = sessions.list();
-      if (!list.length) return vscode.window.showInformationMessage('Folder Diff: no saved compares yet. Press Save in a compare to add one.');
+      if (!list.length) return vscode.window.showInformationMessage('Folder Compare: no saved compares yet. Press Save in a compare to add one.');
       const pick = await vscode.window.showQuickPick(list.map(s => ({ label: s.name, description: s.left.kind === 'git' ? `${s.right.path} ↔ ${s.left.ref}` : `${s.left.path} ↔ ${s.right.path}`, s,
-        buttons: [{ iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Remove from the list' }] })), { title: 'Folder Diff: saved compares' });
+        buttons: [{ iconPath: new vscode.ThemeIcon('trash'), tooltip: 'Remove from the list' }] })), { title: 'Folder Compare: saved compares' });
       if (!pick) return undefined;
       const missing = [pick.s.left, pick.s.right].filter(x => x.kind === 'dir' && !fs.existsSync(x.path)).map(x => x.path);
-      if (missing.length) return vscode.window.showWarningMessage('Folder Diff: this folder is gone: ' + missing.join(', '));
+      if (missing.length) return vscode.window.showWarningMessage('Folder Compare: this folder is gone: ' + missing.join(', '));
       openCompare({ left: pick.s.left, right: pick.s.right, mode: pick.s.mode });
       return undefined;
     }),
@@ -161,7 +164,7 @@ function activate(context) {
 }
 
 async function threeWay(context, pro) {
-  if (!(await pro.allow('Three-way compare and merge', 'Compare a common base with two changed copies and merge the one-sided changes into the base.'))) return;
+  if (!(await pro.allowed('merge3'))) return;
   const base = await pickFolder('Three-way compare 1 of 3: the BASE folder (the common original)');
   if (!base) return;
   const left = await pickFolder('Three-way compare 2 of 3: the LEFT copy (yours)', vscode.Uri.file(path.dirname(base.fsPath)));
@@ -171,7 +174,7 @@ async function threeWay(context, pro) {
   const s = settings();
   let rows;
   try {
-    rows = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Folder Diff: three-way compare', cancellable: true }, async (progress, token) => {
+    rows = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Folder Compare: three-way compare', cancellable: true }, async (progress, token) => {
       progress.report({ message: 'base and left' });
       const bl = await scanOnce(context, base.fsPath, left.fsPath, s, token);
       progress.report({ message: 'base and right' });
@@ -189,7 +192,7 @@ async function threeWay(context, pro) {
       return plan3(bl, br, k => !!lrSame.get(k));
     });
   } catch (e) {
-    if (String(e && e.message) !== 'cancelled') vscode.window.showErrorMessage('Folder Diff: ' + (e.message || e));
+    if (String(e && e.message) !== 'cancelled') vscode.window.showErrorMessage('Folder Compare: ' + (e.message || e));
     return;
   }
   const by = r => rows.filter(x => x.result === r);
@@ -204,7 +207,8 @@ async function threeWay(context, pro) {
   sect('Errors', by('error'), r => `- ${r.rel}`);
   const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: md.join('\n') });
   await vscode.window.showTextDocument(doc, { preview: false });
-  if (!acts.length) { vscode.window.showInformationMessage(`Folder Diff: nothing to merge into the base. ${conflicts.length} conflicts are listed in the report.`); return; }
+  await pro.produced('merge3'); // the report is on screen: that is the output of a try
+  if (!acts.length) { vscode.window.showInformationMessage(`Folder Compare: nothing to merge into the base. ${conflicts.length} conflicts are listed in the report.`); return; }
   const ok = `Merge ${acts.length} into Base`;
   const lines = acts.slice(0, 25).map(a => `${a.action === 'delete' ? 'delete     ' : a.action === 'copyLeft' ? 'from left  ' : 'from right '} ${a.rel}`);
   if (acts.length > 25) lines.push(`...and ${acts.length - 25} more`);
@@ -215,8 +219,10 @@ async function threeWay(context, pro) {
   for (const a of acts) {
     const dst = path.join(base.fsPath, ...(a.baseRel || a.leftRel || a.rightRel).split('/'));
     try {
-      if (a.action === 'delete') await vscode.workspace.fs.delete(vscode.Uri.file(dst), { recursive: true, useTrash: settings().deleteToTrash });
-      else {
+      if (a.action === 'delete') {
+        await guardDelete(base.fsPath, dst);
+        await vscode.workspace.fs.delete(vscode.Uri.file(dst), { recursive: true, useTrash: settings().deleteToTrash });
+      } else {
         const src = a.action === 'copyLeft' ? path.join(left.fsPath, ...a.leftRel.split('/')) : path.join(right.fsPath, ...a.rightRel.split('/'));
         await guardDest(base.fsPath, dst);
         await fs.promises.mkdir(path.dirname(dst), { recursive: true });
@@ -227,8 +233,8 @@ async function threeWay(context, pro) {
       done++;
     } catch (e) { errors.push(`${a.rel}: ${e.message || e}`); }
   }
-  if (errors.length) vscode.window.showWarningMessage(`Folder Diff: merged ${done}. ${errors.length} failed: ${errors.slice(0, 3).join('; ')}`);
-  else vscode.window.showInformationMessage(`Folder Diff: merged ${done} changes into the base. ${conflicts.length} conflicts are left for you.`);
+  if (errors.length) vscode.window.showWarningMessage(`Folder Compare: merged ${done}. ${errors.length} failed: ${errors.slice(0, 3).join('; ')}`);
+  else vscode.window.showInformationMessage(`Folder Compare: merged ${done} changes into the base. ${conflicts.length} conflicts are left for you.`);
 }
 
 function deactivate() {}

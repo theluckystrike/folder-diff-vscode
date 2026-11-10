@@ -10,7 +10,7 @@ const { rollup, countStatuses } = require('./core/compare');
 const { planCopy, planDelete, planSync } = require('./core/plan');
 const { exportResult, fmtSize, summaryLine } = require('./core/export');
 const git = require('./core/git');
-const { guardDest } = require('./core/dest');
+const { guardDest, guardDelete } = require('./core/dest');
 const { showLinks, commandUris } = require('./support');
 
 const VIEW = 'folderDiff.compare';
@@ -90,7 +90,7 @@ class ComparePanel {
     this.counts = null;
     this.blobCache.clear();
     this.failed = false;
-    this.post({ type: 'init', ...this.sideInfo(), mode: this.job.mode, showSame: s.showSame, git: this.git, pro: this.deps.pro.labels() });
+    this.post({ type: 'init', ...this.sideInfo(), mode: this.job.mode, showSame: s.showSame, git: this.git, pro: this.deps.pro.state() });
     const file = path.join(this.deps.context.extensionUri.fsPath, 'dist', 'scan-worker.js');
     const w = new Worker(file, { resourceLimits: { maxOldGenerationSizeMb: 3072 } });
     this.worker = w;
@@ -183,7 +183,7 @@ class ComparePanel {
           const which = msg.type === 'changeLeft' ? 'left' : 'right';
           if (which === 'left' && this.git) return;
           const cur = this.job[which].path;
-          const p = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, canSelectMany: false, defaultUri: vscode.Uri.file(path.dirname(cur)), openLabel: `Use as ${which}`, title: `Folder Diff: pick the ${which} folder` });
+          const p = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, canSelectMany: false, defaultUri: vscode.Uri.file(path.dirname(cur)), openLabel: `Use as ${which}`, title: `Folder Compare: pick the ${which} folder` });
           if (!p || !p[0]) return;
           this.job[which] = { kind: 'dir', path: p[0].fsPath };
           this.panel.title = this.title();
@@ -196,7 +196,7 @@ class ComparePanel {
           if (!s || s.git) return;
           if (msg.type === 'reveal') return vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(s.fsPath));
           await vscode.env.clipboard.writeText(s.fsPath);
-          return vscode.window.setStatusBarMessage('Folder Diff: path copied', 2500);
+          return vscode.window.setStatusBarMessage('Folder Compare: path copied', 2500);
         }
         case 'copy': return this.copy(msg.dir, msg.sel);
         case 'delete': return this.remove(msg.side, msg.sel);
@@ -205,10 +205,11 @@ class ComparePanel {
         case 'saveSession': return this.saveSession();
         case 'sync': return this.sync();
         case 'report': return this.report();
+        case 'threeWay': return vscode.commands.executeCommand('folderDiff.threeWay');
         case 'error': return undefined;
       }
     } catch (err) {
-      vscode.window.showErrorMessage('Folder Diff: ' + ((err && err.message) || String(err)));
+      vscode.window.showErrorMessage('Folder Compare: ' + ((err && err.message) || String(err)));
     }
     return undefined;
   }
@@ -225,10 +226,10 @@ class ComparePanel {
     const kind = this.deps.opener.kindOf(name);
     const go = () => this.deps.opener.open(left, right, name);
     if (kind && left && right) {
-      return this.vscode.window.withProgress({ location: this.vscode.ProgressLocation.Notification, title: `Folder Diff: reading ${name}` }, go);
+      return this.vscode.window.withProgress({ location: this.vscode.ProgressLocation.Notification, title: `Folder Compare: reading ${name}` }, go);
     }
     if (left && right && Math.max(left.size, right.size) > 32 * 1048576) {
-      return this.vscode.window.withProgress({ location: this.vscode.ProgressLocation.Notification, title: `Folder Diff: comparing the bytes of ${name}` }, go);
+      return this.vscode.window.withProgress({ location: this.vscode.ProgressLocation.Notification, title: `Folder Compare: comparing the bytes of ${name}` }, go);
     }
     return go();
   }
@@ -267,12 +268,12 @@ class ComparePanel {
 
   async copy(dir, sel) {
     const { vscode } = this;
-    if (this.running) return vscode.window.showInformationMessage('Folder Diff: wait until the compare has finished, or press Cancel.');
-    if (dir === 'toLeft' && this.git) return vscode.window.showInformationMessage(`Folder Diff: the ${this.job.left.ref} side is a Git ref and cannot be written.`);
+    if (this.running) return vscode.window.showInformationMessage('Folder Compare: wait until the compare has finished, or press Cancel.');
+    if (dir === 'toLeft' && this.git) return vscode.window.showInformationMessage(`Folder Compare: the ${this.job.left.ref} side is a Git ref and cannot be written.`);
     const plan = planCopy(this.entries, sel, dir);
     if (!plan.items.length) {
       const why = plan.blocked.length ? ' ' + plan.blocked.slice(0, 3).join('. ') : plan.skipped ? ' The selected files are already the same on both sides.' : '';
-      return vscode.window.showInformationMessage('Folder Diff: nothing to copy.' + why);
+      return vscode.window.showInformationMessage('Folder Compare: nothing to copy.' + why);
     }
     const from = dir === 'toRight' ? 'left' : 'right', to = dir === 'toRight' ? 'right' : 'left';
     const toRoot = to === 'left' ? this.leftRoot() : this.rightRoot();
@@ -284,14 +285,14 @@ class ComparePanel {
     const ok = `Copy ${n} ${n === 1 ? 'file' : 'files'} to the ${to}`;
     const pick = await vscode.window.showWarningMessage(`Copy ${n} ${n === 1 ? 'file' : 'files'} from the ${from} side to the ${to} side?`, { modal: true, detail }, ok);
     if (pick !== ok) return undefined;
-    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Folder Diff: copying ${n} files` }, () => this.runCopies(plan.items, from, to));
+    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Folder Compare: copying ${n} files` }, () => this.runCopies(plan.items, from, to));
     this.report_(r, 'Copied');
     return this.start();
   }
 
   report_(r, verb) {
-    if (r.errors.length) this.vscode.window.showWarningMessage(`Folder Diff: ${verb} ${r.done}. ${r.errors.length} failed: ${r.errors.slice(0, 3).join('; ')}`);
-    else this.vscode.window.setStatusBarMessage(`Folder Diff: ${verb} ${r.done}`, 4000);
+    if (r.errors.length) this.vscode.window.showWarningMessage(`Folder Compare: ${verb} ${r.done}. ${r.errors.length} failed: ${r.errors.slice(0, 3).join('; ')}`);
+    else this.vscode.window.setStatusBarMessage(`Folder Compare: ${verb} ${r.done}`, 4000);
   }
 
   async runDeletes(items, side) {
@@ -300,18 +301,18 @@ class ComparePanel {
     let done = 0;
     const errors = [];
     for (const it of items) {
-      const uri = this.vscode.Uri.file(abs(root, it.rel));
-      try { await this.vscode.workspace.fs.delete(uri, { recursive: true, useTrash: trash }); done++; } catch (err) { errors.push(`${it.rel}: ${(err && err.message) || err}`); }
+      const target = abs(root, it.rel);
+      try { await guardDelete(root, target); await this.vscode.workspace.fs.delete(this.vscode.Uri.file(target), { recursive: true, useTrash: trash }); done++; } catch (err) { errors.push(`${it.rel}: ${(err && err.message) || err}`); }
     }
     return { done, errors };
   }
 
   async remove(side, sel) {
     const { vscode } = this;
-    if (this.running) return vscode.window.showInformationMessage('Folder Diff: wait until the compare has finished, or press Cancel.');
-    if (side === 'left' && this.git) return vscode.window.showInformationMessage(`Folder Diff: the ${this.job.left.ref} side is a Git ref and cannot be changed.`);
+    if (this.running) return vscode.window.showInformationMessage('Folder Compare: wait until the compare has finished, or press Cancel.');
+    if (side === 'left' && this.git) return vscode.window.showInformationMessage(`Folder Compare: the ${this.job.left.ref} side is a Git ref and cannot be changed.`);
     const plan = planDelete(this.entries, sel, side);
-    if (!plan.items.length) return vscode.window.showInformationMessage(`Folder Diff: the selected rows have nothing on the ${side} side.`);
+    if (!plan.items.length) return vscode.window.showInformationMessage(`Folder Compare: the selected rows have nothing on the ${side} side.`);
     const files = plan.items.reduce((s, x) => s + x.files, 0);
     const trash = this.deps.settings().deleteToTrash;
     const root = side === 'left' ? this.leftRoot() : this.rightRoot();
@@ -337,7 +338,7 @@ class ComparePanel {
     if (!target) return undefined;
     const text = exportResult(format, { left: this.sideInfo().left.path, right: this.rightRoot(), entries: this.entries, counts: this.counts, onlyDiff, mode: this.git ? 'Git' : this.job.mode === 'quick' ? 'Quick' : 'Content' });
     await vscode.workspace.fs.writeFile(target, Buffer.from(text, 'utf8'));
-    const pick = await vscode.window.showInformationMessage(`Folder Diff: exported ${path.basename(target.fsPath)}.`, 'Open');
+    const pick = await vscode.window.showInformationMessage(`Folder Compare: exported ${path.basename(target.fsPath)}.`, 'Open');
     if (pick === 'Open') await vscode.commands.executeCommand('vscode.open', target);
     return undefined;
   }
@@ -347,7 +348,7 @@ class ComparePanel {
     const cfg = vscode.workspace.getConfiguration('folderDiff');
     const cur = cfg.get('exclude', []);
     const v = await vscode.window.showInputBox({
-      title: 'Folder Diff: leave out (comma separated)', value: cur.join(', '),
+      title: 'Folder Compare: leave out (comma separated)', value: cur.join(', '),
       prompt: 'Names and globs. A trailing / matches folders only. Example: node_modules/, *.log, build/',
     });
     if (v === undefined) return undefined;
@@ -357,27 +358,26 @@ class ComparePanel {
     return this.start();
   }
 
-  // ----- Pro candidates (free while PRO_ENABLED is false in src/pro.js) -----
+  // ----- Saved compares (free) and the three Zovo Pro tools: sync, document report (here) and three-way merge (extension.js) -----
 
   async saveSession() {
-    if (!(await this.deps.pro.allow('Saved compares', 'Save this pair of folders and its settings, and open it again later from "Open Saved Compare".'))) return undefined;
-    const name = await this.vscode.window.showInputBox({ title: 'Folder Diff: save this compare', value: this.title(), prompt: 'A name for the list in "Open Saved Compare"' });
+    const name = await this.vscode.window.showInputBox({ title: 'Folder Compare: save this compare', value: this.title(), prompt: 'A name for the list in "Open Saved Compare"' });
     if (!name) return undefined;
     await this.deps.sessions.save({ name, left: this.job.left, right: this.job.right, mode: this.job.mode });
-    this.vscode.window.setStatusBarMessage(`Folder Diff: saved "${name}"`, 4000);
+    this.vscode.window.setStatusBarMessage(`Folder Compare: saved "${name}"`, 4000);
     return undefined;
   }
 
   async sync() {
     const { vscode } = this;
-    if (this.running) return vscode.window.showInformationMessage('Folder Diff: wait until the compare has finished, or press Cancel.');
-    if (!(await this.deps.pro.allow('Folder sync', 'Make one folder equal to the other, or copy the newer files both ways, after a preview of every change.'))) return undefined;
+    if (this.running) return vscode.window.showInformationMessage('Folder Compare: wait until the compare has finished, or press Cancel.');
+    if (!(await this.deps.pro.allowed('sync'))) return undefined;
     const items = [
       { label: 'Update both ways', description: 'newer file wins, missing files are copied, nothing is deleted', how: 'update' },
       { label: `Mirror ${this.leftLabel()} to ${this.rightLabel()}`, description: 'the right side becomes equal to the left (copies and deletes)', how: 'mirrorRight' },
     ];
     if (!this.git) items.push({ label: 'Mirror Right to Left', description: 'the left side becomes equal to the right (copies and deletes)', how: 'mirrorLeft' });
-    const pick = await vscode.window.showQuickPick(items, { title: 'Folder Diff: sync', placeHolder: 'You see the full plan before anything is written' });
+    const pick = await vscode.window.showQuickPick(items, { title: 'Folder Compare: sync', placeHolder: 'You see the full plan before anything is written' });
     if (!pick) return undefined;
     let how = pick.how;
     const plan = planSync(this.entries, how);
@@ -389,7 +389,7 @@ class ComparePanel {
       ['Delete on the left', plan.deleteLeft.items.map(x => x.kind === 'dir' ? `${x.rel}/ (${x.files} files)` : x.rel)],
     ];
     const total = parts.reduce((s, p) => s + p[1].length, 0);
-    if (!total) return vscode.window.showInformationMessage('Folder Diff: nothing to sync. Equal files and errors are never touched.');
+    if (!total) return vscode.window.showInformationMessage('Folder Compare: nothing to sync. Equal files and errors are never touched.');
     const md = [`# Sync plan: ${pick.label}`, '', `- Left: \`${this.sideInfo().left.path}\``, `- Right: \`${this.rightRoot()}\``, ''];
     for (const [h, lines] of parts) if (lines.length) md.push(`## ${h} (${lines.length})`, '', ...lines.map(l => `- ${l}`), '');
     const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: md.join('\n') });
@@ -398,7 +398,7 @@ class ComparePanel {
     const ok = `Apply ${total} changes`;
     const go = await vscode.window.showWarningMessage(`Sync: ${pick.label}?`, { modal: true, detail: `The full list is in the plan next to this compare.\n\n${summary}${this.deps.settings().deleteToTrash ? '\n\nDeleted files go to the Trash.' : '\n\nDeletes are for good (folderDiff.deleteToTrash is off).'}` }, ok);
     if (go !== ok) return undefined;
-    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Folder Diff: syncing' }, async () => {
+    const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Folder Compare: syncing' }, async () => {
       const a = await this.runCopies(plan.copyToRight.items, 'left', 'right');
       const b = await this.runCopies(plan.copyToLeft.items, 'right', 'left');
       const c = await this.runDeletes(plan.deleteRight.items, 'right');
@@ -406,18 +406,19 @@ class ComparePanel {
       return { done: a.done + b.done + c.done + d.done, errors: [...a.errors, ...b.errors, ...c.errors, ...d.errors] };
     });
     this.report_(r, 'Synced');
+    if (r.done > 0) await this.deps.pro.produced('sync'); // a try counts only when the sync changed something
     how = null;
     return this.start();
   }
 
   async report() {
     const { vscode } = this;
-    if (this.running) return vscode.window.showInformationMessage('Folder Diff: wait until the compare has finished, or press Cancel.');
-    if (!(await this.deps.pro.allow('Document change report', 'One Markdown report of the text changes inside every changed Word, Excel, CSV, Parquet and PDF file.'))) return undefined;
+    if (this.running) return vscode.window.showInformationMessage('Folder Compare: wait until the compare has finished, or press Cancel.');
+    if (!(await this.deps.pro.allowed('docReport'))) return undefined;
     const docs = this.entries.filter(e => e.status === 'changed' && e.l && e.r && e.l.kind === 'file' && e.r.kind === 'file' && this.deps.opener.kindOf(e.name)).slice(0, 300);
-    if (!docs.length) return vscode.window.showInformationMessage('Folder Diff: no changed Word, Excel, CSV, Parquet or PDF files in this compare.');
+    if (!docs.length) return vscode.window.showInformationMessage('Folder Compare: no changed Word, Excel, CSV, Parquet or PDF files in this compare.');
     const out = [`# Document changes`, '', `- Left: \`${this.sideInfo().left.path}\``, `- Right: \`${this.rightRoot()}\``, `- ${summaryLine(this.counts)}`, `- ${docs.length} changed documents`, ''];
-    await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Folder Diff: document report', cancellable: true }, async (progress, token) => {
+    await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Folder Compare: document report', cancellable: true }, async (progress, token) => {
       let k = 0;
       for (const e of docs) {
         if (token.isCancellationRequested) { out.push('', '(stopped by the user)'); break; }
@@ -437,6 +438,7 @@ class ComparePanel {
     });
     const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: out.join('\n') });
     await vscode.window.showTextDocument(doc, { preview: false });
+    await this.deps.pro.produced('docReport'); // the report is on screen
     return undefined;
   }
 }

@@ -159,3 +159,24 @@ test('report helpers: line changes and confirmation lists', () => {
   const l = listLines(Array.from({ length: 30 }, (_, i) => 'f' + i));
   assert.match(l, /\.\.\.and 5 more$/);
 });
+
+test('hostile documents: a ZIP that declares a huge part is refused before it is unpacked; a cut ZIP is a message', async () => {
+  // A local header, one central directory entry that claims 300 MB, and the end record. Nothing real to inflate.
+  const name = Buffer.from('word/document.xml');
+  const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50, 0);
+  const cd = Buffer.alloc(46); cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt32LE(10, 20); cd.writeUInt32LE(300 * 1048576, 24); cd.writeUInt16LE(name.length, 28);
+  const cdOff = local.length + name.length + 10;
+  const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(cd.length + name.length, 12); end.writeUInt32LE(cdOff, 16);
+  const bomb = Buffer.concat([local, name, Buffer.alloc(10), cd, name, end]);
+  const t0 = Date.now();
+  const r = await runConvert(W, { kind: 'docx', ext: '.docx', bytes: new Uint8Array(bomb) });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.error, /zip bomb/);
+  assert.ok(Date.now() - t0 < 10000);
+  const cut = await runConvert(W, { kind: 'docx', ext: '.docx', bytes: new Uint8Array(Buffer.concat([local, name, Buffer.alloc(100)])) });
+  assert.strictEqual(cut.ok, false);
+  // The real sample documents pass the check
+  const real = fs.readFileSync(path.join(SAMPLES, 'release-1.1', 'docs', 'Q3 Field Report.docx'));
+  const ok = await runConvert(W, { kind: 'docx', ext: '.docx', bytes: new Uint8Array(real) });
+  assert.ok(ok.ok, ok.error);
+});

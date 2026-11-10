@@ -148,12 +148,12 @@ function createDiffOpener(deps) {
       const [a, b] = await Promise.all([convertSide(kind, left, name), convertSide(kind, right, name)]);
       if (!a.ok || !b.ok) {
         const why = !a.ok ? `${left.label}: ${a.error}` : `${right.label}: ${b.error}`;
-        vscode.window.showWarningMessage(`Folder Diff could not read ${name} as text (${why}). Showing the byte compare instead.`);
+        vscode.window.showWarningMessage(`Folder Compare could not read ${name} as text (${why}). Showing the byte compare instead.`);
         return binaryDiff(left, right, name, 'the converter failed');
       }
       const ext = kind === 'docx' ? '.md' : kind === 'table' ? '.csv' : '.txt';
       const what = kind === 'docx' ? 'as Markdown' : kind === 'table' ? 'as CSV' : 'PDF text';
-      if (a.text === b.text) vscode.window.showInformationMessage(`Folder Diff: the text of ${name} is the same on both sides. Only formatting, images or metadata differ.`);
+      if (a.text === b.text) vscode.window.showInformationMessage(`Folder Compare: the text of ${name} is the same on both sides. Only formatting, images or metadata differ.`);
       await vscode.commands.executeCommand('vscode.diff', virtualUri(left.label, name, a.text, ext), virtualUri(right.label, name, b.text, ext), `${name} (${left.label} ↔ ${right.label}, ${what})`, { preview: false });
       return { ok: true };
     }

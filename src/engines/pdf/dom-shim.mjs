@@ -28,3 +28,7 @@ if (!globalThis.DOMMatrix) globalThis.DOMMatrix = DOMMatrixShim;
 if (!globalThis.ImageData) globalThis.ImageData = class ImageData { constructor(w, h) { this.width = w; this.height = h; } };
 if (!globalThis.Path2D) globalThis.Path2D = class Path2D { addPath() {} };
 export default DOMMatrixShim;
+// pdf.js always tries the optional native canvas package in Node and logs a warning when it is missing. Text
+// extraction never needs it, so that one line is dropped (it showed as an error line in the extension host log).
+const canvasNote = (args) => typeof args[0] === 'string' && args[0].startsWith('Warning: Cannot load "@napi-rs/canvas"');
+for (const k of ['log', 'warn']) { const f = console[k]; console[k] = (...args) => { if (!canvasNote(args)) f(...args); }; }

@@ -9,4 +9,3 @@ icon.svg
 dist/*.vsix
 *.vsix
 package-lock.json
-images/shot-*.png

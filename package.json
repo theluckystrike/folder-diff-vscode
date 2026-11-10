@@ -1,8 +1,8 @@
 {
   "name": "zovo-folder-diff",
-  "displayName": "Folder Compare & Directory Diff - Compare Files, Folders, Word, Excel & Binary",
-  "description": "Free and offline. Compare two folders side by side with clear Left and Right panels, then open a diff for any file: text, Word (.docx, .odt, .doc), Excel (.xlsx, .xls, .ods), CSV, Parquet, PDF and binary files. Copy or delete with a preview, export the result, compare a folder with a Git branch or tag.",
-  "version": "0.1.0",
+  "displayName": "Folder Compare & Folder Diff (Directory Compare, Word, Excel & Binary Files)",
+  "description": "Folder compare and folder diff for VS Code: compare two folders or directories side by side with Left and Right panels, then open the diff of any file: text, Word (.docx, .odt, .doc), Excel (.xlsx, .xls, .ods), CSV, Parquet, PDF and binary. Filters, copy and delete with a preview, export to Markdown, CSV or HTML, compare with a Git branch. Offline, no sign-in.",
+  "version": "0.1.1",
   "publisher": "zovo",
   "license": "MIT",
   "icon": "icon.png",
@@ -20,24 +20,24 @@
   ],
   "keywords": [
     "folder compare",
+    "folder diff",
     "compare folders",
     "diff folders",
     "directory compare",
-    "compare files",
     "directory diff",
-    "folder diff",
-    "file compare",
+    "folder comparison",
     "compare directories",
+    "compare files",
+    "file compare",
     "diff",
-    "compare",
     "word diff",
     "excel diff",
     "docx diff",
     "xlsx compare",
     "pdf diff",
-    "binary diff",
+    "binary compare",
     "sync folders",
-    "git diff",
+    "three-way merge",
     "offline"
   ],
   "main": "./dist/extension.js",
@@ -54,72 +54,82 @@
       {
         "command": "folderDiff.compareSelected",
         "title": "Compare Selected Folders",
-        "category": "Folder Diff"
+        "category": "Folder Compare"
       },
       {
         "command": "folderDiff.compareFolders",
         "title": "Compare Two Folders...",
-        "category": "Folder Diff"
+        "category": "Folder Compare"
       },
       {
         "command": "folderDiff.compareWith",
         "title": "Compare Folder With...",
-        "category": "Folder Diff"
+        "category": "Folder Compare"
       },
       {
         "command": "folderDiff.compareWithGitRef",
         "title": "Compare Folder with Git Branch or Tag...",
-        "category": "Folder Diff"
+        "category": "Folder Compare"
       },
       {
         "command": "folderDiff.openSaved",
         "title": "Open Saved Compare...",
-        "category": "Folder Diff"
+        "category": "Folder Compare"
       },
       {
         "command": "folderDiff.threeWay",
-        "title": "Three-Way Folder Compare and Merge...",
-        "category": "Folder Diff"
+        "title": "Three-Way Folder Compare and Merge (Zovo Pro)...",
+        "category": "Folder Compare"
       },
       {
         "command": "folderDiff.trySample",
         "title": "Try It on Sample Folders",
-        "category": "Folder Diff"
+        "category": "Folder Compare"
       },
       {
         "command": "folderDiff.openWalkthrough",
         "title": "Get Started",
-        "category": "Folder Diff"
+        "category": "Folder Compare"
       },
       {
         "command": "folderDiff.supportDeveloper",
         "title": "Support the developer",
-        "category": "Folder Diff"
+        "category": "Folder Compare"
       },
       {
         "command": "folderDiff.moreViewers",
         "title": "More free tools",
-        "category": "Folder Diff"
+        "category": "Folder Compare"
       },
       {
         "command": "folderDiff.unlockWithSponsors",
-        "title": "Zovo: Unlock Pro with GitHub Sponsors",
-        "category": "Folder Diff"
+        "title": "I already paid: unlock with GitHub Sponsors",
+        "category": "Zovo Pro"
       },
       {
         "command": "folderDiff.enterLicenseKey",
-        "title": "Zovo: Enter license key",
-        "category": "Folder Diff"
+        "title": "Enter Zovo Pro license key",
+        "category": "Zovo Pro"
       },
       {
         "command": "folderDiff.getPro",
-        "title": "Zovo: Get Pro",
-        "category": "Folder Diff"
+        "title": "Get Zovo Pro (USD 19 once, all 22 Zovo extensions)",
+        "category": "Zovo Pro"
       },
       {
         "command": "folderDiff.removeLicense",
-        "title": "Zovo: Remove license from this editor",
-        "category": "Folder Diff"
+        "title": "Remove Zovo Pro from this editor",
+        "category": "Zovo Pro"
+      },
+      {
+        "command": "folderDiff.payWithPayPal",
+        "title": "Pay for Zovo Pro with PayPal (USD 19, team of 5 USD 59)",
+        "category": "Zovo Pro"
+      },
+      {
+        "command": "folderDiff.payByCard",
+        "title": "Pay for Zovo Pro by card (USD 19)",
+        "category": "Zovo Pro"
       }
     ],
     "menus": {
@@ -150,25 +160,13 @@
           "when": "isWorkspaceTrusted"
         },
         {
-          "command": "folderDiff.unlockWithSponsors",
-          "when": "folderDiff.proEnabled"
-        },
-        {
-          "command": "folderDiff.enterLicenseKey",
-          "when": "folderDiff.proEnabled"
-        },
-        {
-          "command": "folderDiff.getPro",
-          "when": "folderDiff.proEnabled"
-        },
-        {
-          "command": "folderDiff.removeLicense",
-          "when": "folderDiff.proEnabled"
+          "command": "folderDiff.threeWay",
+          "when": "config.folderDiff.showProTools"
         }
       ]
     },
     "configuration": {
-      "title": "Folder Diff",
+      "title": "Folder Compare",
       "properties": {
         "folderDiff.compareMode": {
           "type": "string",
@@ -252,6 +250,11 @@
           "default": true,
           "description": "Delete moves files to the Trash or Recycle Bin. Off deletes them for good (the confirmation says which)."
         },
+        "folderDiff.showProTools": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the three Zovo Pro tools (Sync folders, Report of document changes, Three-way compare and merge; 3 free tries each) in the More menu and the Command Palette. Turn off to hide them."
+        },
         "folderDiff.askForRating": {
           "type": "boolean",
           "default": true,
@@ -260,14 +263,14 @@
         "folderDiff.showSupportLinks": {
           "type": "boolean",
           "default": true,
-          "description": "Show the small Rate, More free tools and Sponsor links at the bottom of the compare view. Nothing is sent anywhere."
+          "description": "Show the small Rate, More free tools and support links at the bottom of the compare view. Nothing is sent anywhere."
         }
       }
     },
     "walkthroughs": [
       {
         "id": "folderDiff.start",
-        "title": "Get started with Folder Diff",
+        "title": "Get started with Folder Compare",
         "description": "Compare two folders, open the diff of any file, copy what you need.",
         "steps": [
           {
@@ -293,30 +296,27 @@
           {
             "id": "copy",
             "title": "Copy, delete and export",
-            "description": "Select rows and press Copy to right, Copy to left or Delete. A confirmation lists every file first. Export saves the result as Markdown, CSV or HTML.",
+            "description": "Select rows and press Copy to right, Copy to left or Delete. A confirmation lists every file first. Export saves the result as Markdown, CSV or HTML. node_modules, .git and dist are left out by default; More, Ignore rules changes that.",
             "media": {
               "markdown": "walkthrough/copy.md"
             }
           },
           {
-            "id": "settings",
-            "title": "Ignore rules and compare mode",
-            "description": "node_modules, .git and dist are left out by default, plus what .gitignore ignores. Content mode compares bytes; Quick mode uses size and time.\n[Open settings](command:workbench.action.openSettings?%5B%22folderDiff%22%5D)",
+            "id": "zovo-related",
+            "title": "Files that often come with folders",
+            "description": "If your project also has binary files or SVN working copies, these free Zovo extensions work with them. A link opens the extension page, and you choose there whether to install it.\n[Hex Viewer](command:extension.open?%5B%22zovo.zovo-hex-viewer%22%5D)\n[SVN Client](command:extension.open?%5B%22zovo.zovo-svn-client%22%5D)",
             "media": {
-              "markdown": "walkthrough/settings.md"
-            },
-            "completionEvents": [
-              "onCommand:workbench.action.openSettings"
-            ]
+              "markdown": "walkthrough/related.md"
+            }
           }
         ]
       }
     ]
   },
   "scripts": {
-    "build": "node scripts/build.js --production",
-    "test": "node scripts/build.js --production && node --test \"test/*.test.js\" \"test/*.test.mjs\"",
-    "package": "npm run build && npx -y @vscode/vsce package --no-dependencies -o dist/"
+    "build": "node scripts/build.js production",
+    "test": "node scripts/test.js",
+    "package": "node scripts/package.js"
   },
   "devDependencies": {
     "@types/vscode": "~1.90.0",
@@ -339,6 +339,6 @@
     "url": "https://github.com/theluckystrike/folder-diff-vscode"
   },
   "sponsor": {
-    "url": "https://github.com/sponsors/theluckystrike"
+    "url": "https://github.com/sponsors/theluckystrike/sponsorships?tier_id=679878"
   }
 }

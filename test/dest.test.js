@@ -33,3 +33,32 @@ test('guardDest: never writes through a link on the target side', async () => {
     await guardDest(root, path.join(root, 'inner', 'x.txt'));
   } finally { fs.rmSync(w, { recursive: true, force: true }); }
 });
+
+test('guardDelete: a delete stays inside the compared folder and never goes through a linked parent', async () => {
+  const { guardDelete } = require('../src/core/dest');
+  const w = fs.mkdtempSync(path.join(os.tmpdir(), 'fd-del-'));
+  try {
+    const root = path.join(w, 'right'), out = path.join(w, 'outside');
+    fs.mkdirSync(path.join(root, 'real'), { recursive: true }); fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(path.join(out, 'secret.txt'), 'SECRET');
+    fs.symlinkSync(out, path.join(root, 'sub'));
+    await assert.rejects(guardDelete(root, path.join(root, 'sub', 'secret.txt')), /outside/);
+    await assert.rejects(guardDelete(root, path.join(w, 'outside', 'secret.txt')), /outside/);
+    await assert.rejects(guardDelete(root, path.join(root, '..', 'outside')), /outside/);
+    await assert.rejects(guardDelete(root, root), /compared folder itself/);
+    await guardDelete(root, path.join(root, 'sub'));            // the link itself: allowed (removes the link only)
+    await guardDelete(root, path.join(root, 'real'));
+    await guardDelete(root, path.join(root, 'real', 'x.txt'));
+    assert.equal(fs.readFileSync(path.join(out, 'secret.txt'), 'utf8'), 'SECRET');
+  } finally { fs.rmSync(w, { recursive: true, force: true }); }
+});
+
+test('guardDest: a destination outside the root by .. is refused', async () => {
+  const w = fs.mkdtempSync(path.join(os.tmpdir(), 'fd-dot-'));
+  try {
+    const root = path.join(w, 'right');
+    fs.mkdirSync(root, { recursive: true });
+    await assert.rejects(guardDest(root, path.join(root, '..', 'escape.txt')), /outside/);
+    assert.ok(!fs.existsSync(path.join(w, 'escape.txt')));
+  } finally { fs.rmSync(w, { recursive: true, force: true }); }
+});

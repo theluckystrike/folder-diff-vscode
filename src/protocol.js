@@ -9,7 +9,7 @@ const sel = v => (Array.isArray(v) && v.length <= MAX_SEL && v.every(isIdx) ? v 
 function validate(m) {
   if (!m || typeof m !== 'object' || typeof m.type !== 'string') return null;
   switch (m.type) {
-    case 'ready': case 'refresh': case 'swap': case 'cancel': case 'editExclude': case 'saveSession': case 'sync': case 'report':
+    case 'ready': case 'refresh': case 'swap': case 'cancel': case 'editExclude': case 'saveSession': case 'sync': case 'report': case 'threeWay':
     case 'changeLeft': case 'changeRight':
       return { type: m.type };
     case 'open': return isIdx(m.i) ? { type: 'open', i: m.i } : null;

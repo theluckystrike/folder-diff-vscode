@@ -9,7 +9,7 @@ const { mkWork, write, rm } = require('./helpers/tree');
 
 const ROOT = path.join(__dirname, '..');
 const pkg = require('../package.json');
-const state = { config: {}, warnings: [], infos: [], answer: null, saveTarget: null, executed: [], docs: [] };
+const state = { config: {}, warnings: [], infos: [], answer: null, saveTarget: null, executed: [], docs: [], picks: [], status: [] };
 
 function uriOf(p) { return { scheme: 'file', fsPath: p, path: p, with(o) { return uriOf(o.path || p); }, toString() { return 'file://' + p; } }; }
 function fakePanel() {
@@ -27,7 +27,9 @@ const vscodeMock = {
   Uri: { file: uriOf, joinPath: (u, ...s) => uriOf(path.join(u.fsPath, ...s)), parse: s => ({ toString: () => s }), from: o => ({ ...o, toString: () => `${o.scheme}:${o.path}?${o.query}` }) },
   ViewColumn: { Active: -1, Beside: -2 }, ProgressLocation: { Notification: 15 }, FileType: { Directory: 2 }, ConfigurationTarget: { Global: 1, Workspace: 2 },
   ThemeIcon: class { constructor(id) { this.id = id; } },
+  EventEmitter: class { constructor() { this.l = []; this.event = (f) => { this.l.push(f); return { dispose() {} }; }; } fire(v) { for (const f of this.l) f(v); } dispose() {} },
   workspace: {
+    onDidChangeConfiguration: () => ({ dispose() {} }),
     workspaceFolders: null, isTrusted: true,
     getConfiguration: () => ({ get: (k, d) => (k in state.config ? state.config[k] : d), update: async (k, v) => { state.config[k] = v; } }),
     fs: {
@@ -45,7 +47,9 @@ const vscodeMock = {
     showWarningMessage: async (msg, opts, ...btns) => { state.warnings.push({ msg, opts, btns }); return state.answer === 'ok' ? btns[0] : undefined; },
     showInformationMessage: async (...a) => { state.infos.push(a); },
     showErrorMessage: async (...a) => { state.infos.push(['ERROR', ...a]); },
-    setStatusBarMessage: () => ({ dispose() {} }),
+    setStatusBarMessage: (m) => { state.status.push(m); return { dispose() {} }; },
+    showQuickPick: async (items) => { const f = state.picks.shift(); return f ? f(items) : undefined; },
+    registerUriHandler: () => ({ dispose() {} }),
     showSaveDialog: async () => state.saveTarget,
     showTextDocument: async () => {},
     onDidChangeWindowState: () => ({ dispose() {} }),
@@ -74,7 +78,16 @@ test('manifest: engines floor, commands registered both ways, menus, settings', 
   for (const m of [...pkg.contributes.menus['explorer/context'], ...pkg.contributes.menus.commandPalette]) assert.ok(declared.includes(m.command), m.command);
   for (const k of ['askForRating', 'showSupportLinks', 'exclude', 'compareMode']) assert.ok(pkg.contributes.configuration.properties['folderDiff.' + k], k);
   const words = pkg.displayName.toLowerCase();
-  for (const phrase of ['compare files', 'diff folders', 'compare folders', 'folder compare', 'directory compare']) for (const w of phrase.split(' ')) assert.ok(words.includes(w), `${phrase}: ${w}`);
+  // Name rule: the measured phrase first and whole, the second phrase whole; never a rival's full name alone.
+  assert.ok(pkg.displayName.startsWith('Folder Compare & Folder Diff'), pkg.displayName);
+  assert.ok(words.includes('directory compare'));
+  assert.ok(pkg.description.toLowerCase().startsWith('folder compare and folder diff'));
+  for (const k of ['folder compare', 'folder diff', 'compare folders', 'directory compare', 'directory diff']) assert.ok(pkg.keywords.includes(k), k);
+  assert.ok(!['compare folders', 'diff folders'].includes(words));
+  assert.equal(pkg.contributes.configuration.properties['folderDiff.showProTools'].default, true);
+  const pal = pkg.contributes.menus.commandPalette.find(m => m.command === 'folderDiff.threeWay');
+  assert.equal(pal.when, 'config.folderDiff.showProTools');
+  assert.ok(!JSON.stringify(pkg).includes('proEnabled'), 'no old Pro switch');
 });
 
 test('webview HTML: strict CSP, nonce scripts, no remote origin', () => {
@@ -155,21 +168,123 @@ test('compare panel: a missing folder gives a message, not a crash; cancel stops
   g.close();
 });
 
-test('Pro switch: off ships everything free, with no label; on gives 3 tries, then asks', async () => {
-  const { createPro, PRO_ENABLED } = require('../src/pro');
-  assert.equal(PRO_ENABLED, false);
-  const c = { subscriptions: [], globalState: ctx.globalState };
-  const off = createPro({ vscode: vscodeMock, context: c });
-  assert.deepEqual(off.labels(), []);
-  assert.equal(await off.allow('Folder sync'), true);
-  let asked = 0;
-  const fake = { ready: Promise.resolve(), isPro: () => false, refresh() {}, requirePro: async () => { asked++; return false; } };
-  const on = createPro({ vscode: vscodeMock, context: { subscriptions: [], globalState: { data: new Map(), get(k, d) { return this.data.get(k) || d; }, async update(k, v) { this.data.set(k, v); } } }, enabled: true, license: fake });
-  assert.deepEqual(on.labels().length, 4);
-  const r = [];
-  for (let i = 0; i < 4; i++) r.push(await on.allow('Folder sync', 'x'));
-  assert.deepEqual(r, [true, true, true, false]);
-  assert.equal(asked, 1);
-  const paid = createPro({ vscode: vscodeMock, context: c, enabled: true, license: { ...fake, isPro: () => true } });
-  assert.equal(await paid.allow('Folder sync'), true);
+function memState() { return { data: new Map(), get(k, d) { return this.data.has(k) ? this.data.get(k) : d; }, async update(k, v) { this.data.set(k, v); } }; }
+
+test('Zovo Pro: 3 free tries per tool, counted only after output; the 4th click shows the panel with detail and triesUsed', async () => {
+  const { createPro, TOOLS, TRIAL_USES } = require('../src/pro');
+  assert.equal(TRIAL_USES, 3);
+  assert.deepEqual(TOOLS, ['Sync folders', 'Three-way compare and merge', 'Document change report']);
+  const asks = [];
+  const fake = { ready: Promise.resolve(), isPro: () => false, refresh() {}, requirePro: async (t, o) => { asks.push([t, o]); return false; } };
+  const c = { subscriptions: [], globalState: memState() };
+  const pro = createPro({ vscode: vscodeMock, context: c, license: fake });
+  // allowed() alone never uses a try (the user may press Escape after it)
+  for (let i = 0; i < 5; i++) assert.equal(await pro.allowed('sync'), true);
+  assert.equal(pro.left('sync'), 3);
+  for (let i = 0; i < 3; i++) { assert.equal(await pro.allowed('sync'), true); await pro.produced('sync'); }
+  assert.equal(pro.left('sync'), 0);
+  assert.match(state.status[state.status.length - 1], /free try 3 of 3 of "Sync folders" used/);
+  assert.equal(asks.length, 0);
+  assert.equal(await pro.allowed('sync'), false);
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0][0], 'Sync folders');
+  assert.equal(asks[0][1].triesUsed, 3);
+  assert.match(asks[0][1].detail, /preview/);
+  assert.deepEqual(asks[0][1].tools, TOOLS);
+  // other tools keep their own tries
+  assert.equal(pro.left('docReport'), 3);
+  assert.equal(await pro.allowed('merge3'), true);
+  assert.deepEqual(pro.state(), { show: true, licensed: false, tries: { sync: 0, merge3: 3, docReport: 3 } });
+  state.config.showProTools = false;
+  assert.equal(pro.state().show, false);
+  delete state.config.showProTools;
+  // licensed: always allowed, nothing counted
+  const paid = createPro({ vscode: vscodeMock, context: { subscriptions: [], globalState: memState() }, license: { ...fake, isPro: () => true } });
+  for (let i = 0; i < 5; i++) { assert.equal(await paid.allowed('docReport'), true); await paid.produced('docReport'); }
+  assert.equal(paid.left('docReport'), 3);
+  assert.equal(paid.state().licensed, true);
+});
+
+test('Zovo Pro in the compare view: Escape keeps the try, a sync that writes uses one, the 4th sync shows the panel and writes nothing', async (t) => {
+  const { ComparePanel } = require('../src/panel');
+  const { createPro } = require('../src/pro');
+  const w = mkWork('unit-pro');
+  t.after(() => rm(w));
+  const a = path.join(w, 'a'), b = path.join(w, 'b');
+  const asks = [];
+  const fake = { ready: Promise.resolve(), isPro: () => false, refresh() {}, requirePro: async (title, o) => { asks.push([title, o]); return false; } };
+  const c = { ...ctx, subscriptions: [], globalState: memState() };
+  const pro = createPro({ vscode: vscodeMock, context: c, license: fake });
+  const deps = { vscode: vscodeMock, context: c, opener: { kindOf: () => null }, rating: { success() {}, failure() {} }, pro, settings: ext.settings, sessions: { save: async () => {} } };
+  const run = async (n) => {
+    write(a, { [`new${n}.txt`]: 'L' + n });
+    const p = new ComparePanel(deps, { left: { kind: 'dir', path: a }, right: { kind: 'dir', path: b } });
+    const f = panels[panels.length - 1];
+    await f.send({ type: 'ready' });
+    await waitFor(() => f.sent.find(m => m.type === 'done'));
+    return { p, f };
+  };
+  fs.mkdirSync(b, { recursive: true });
+  // 1: Escape on the sync choice: no try used, nothing written
+  let { f } = await run(0);
+  assert.deepEqual(f.sent.find(m => m.type === 'init').pro, { show: true, licensed: false, tries: { sync: 3, merge3: 3, docReport: 3 } });
+  state.picks.push(() => undefined);
+  await f.send({ type: 'sync' });
+  assert.equal(pro.left('sync'), 3);
+  assert.ok(!fs.existsSync(path.join(b, 'new0.txt')));
+  // 2: Cancel on the confirmation: no try used
+  state.picks.push(items => items[0]);
+  state.answer = null;
+  await f.send({ type: 'sync' });
+  assert.equal(pro.left('sync'), 3);
+  assert.ok(!fs.existsSync(path.join(b, 'new0.txt')));
+  f.close();
+  // 3 syncs that copy: one try each
+  state.answer = 'ok';
+  for (let n = 1; n <= 3; n++) {
+    ({ f } = await run(n));
+    state.picks.push(items => items[0]);
+    await f.send({ type: 'sync' });
+    assert.ok(fs.existsSync(path.join(b, `new${n}.txt`)), `sync ${n} copied`);
+    assert.equal(pro.left('sync'), 3 - n);
+    f.close();
+  }
+  // 4th: the panel, no quick pick, nothing written
+  ({ f } = await run(4));
+  const picksBefore = state.picks.length;
+  state.picks.push(items => items[0]);
+  await f.send({ type: 'sync' });
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0][0], 'Sync folders');
+  assert.equal(asks[0][1].triesUsed, 3);
+  assert.ok(!fs.existsSync(path.join(b, 'new4.txt')), 'nothing written after the panel');
+  state.picks.length = picksBefore;
+  // A report with no changed documents uses no try
+  await f.send({ type: 'report' });
+  assert.equal(pro.left('docReport'), 3);
+  f.close();
+  state.answer = null;
+});
+
+test('delete never goes through a linked folder: the outside file survives', async (t) => {
+  const { ComparePanel } = require('../src/panel');
+  const w = mkWork('unit-del');
+  t.after(() => rm(w));
+  const a = path.join(w, 'a'), b = path.join(w, 'b'), out = path.join(w, 'outside');
+  write(a, { 'sub/x.txt': 'L' });
+  write(out, { 'x.txt': 'OUTSIDE' });
+  fs.mkdirSync(b, { recursive: true });
+  fs.symlinkSync(out, path.join(b, 'sub'));
+  const deps = { vscode: vscodeMock, context: ctx, opener: { kindOf: () => null }, rating: { success() {}, failure() {} }, pro: { state: () => ({ show: true, licensed: false, tries: {} }) }, settings: ext.settings, sessions: {} };
+  const p = new ComparePanel(deps, { left: { kind: 'dir', path: a }, right: { kind: 'dir', path: b } });
+  const r = await p.runDeletes([{ rel: 'sub/x.txt', kind: 'file', files: 1 }], 'right');
+  assert.equal(r.done, 0);
+  assert.match(r.errors[0], /outside/);
+  assert.equal(fs.readFileSync(path.join(out, 'x.txt'), 'utf8'), 'OUTSIDE');
+  // the link itself can be deleted; its target stays
+  const r2 = await p.runDeletes([{ rel: 'sub', kind: 'file', files: 1 }], 'right');
+  assert.equal(r2.done, 1);
+  assert.ok(!fs.existsSync(path.join(b, 'sub')));
+  assert.equal(fs.readFileSync(path.join(out, 'x.txt'), 'utf8'), 'OUTSIDE');
+  panels[panels.length - 1].close();
 });

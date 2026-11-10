@@ -13,9 +13,37 @@ const { diffRanges, hexDump } = bytesMod;
 const TABLE_FORMAT = { '.csv': 'csv', '.tsv': 'tsv', '.tab': 'tsv', '.psv': 'csv', '.parquet': 'parquet', '.pq': 'parquet',
   '.xlsx': 'excel', '.xlsm': 'excel', '.xlsb': 'excel', '.xls': 'excel', '.ods': 'excel' };
 
+// Zip bomb guard for Word and OpenDocument files: read the declared sizes in the ZIP central directory before
+// anything is inflated. A real document is far below these limits.
+const MAX_ENTRY_BYTES = 128 * 1048576, MAX_TOTAL_BYTES = 256 * 1048576, MAX_ENTRIES = 20000;
+export function zipInflateCheck(buf) {
+  const b = Buffer.from(buf.buffer || buf, buf.byteOffset || 0, buf.byteLength);
+  if (b.length < 22 || b.readUInt32LE(0) !== 0x04034b50) return null; // not a ZIP (old .doc): nothing to check here
+  let eocd = -1;
+  for (let i = b.length - 22; i >= Math.max(0, b.length - 65557); i--) if (b.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) return 'The file looks like a ZIP package without its directory (cut or damaged).';
+  const count = b.readUInt16LE(eocd + 10), cdOff = b.readUInt32LE(eocd + 16);
+  if (count === 0xffff || cdOff === 0xffffffff) return 'The package uses ZIP64 sizes, which a Word document never needs. It was not unpacked.';
+  if (count > MAX_ENTRIES) return `The package has ${count} parts, over the limit of ${MAX_ENTRIES}. It was not unpacked.`;
+  let p = cdOff, total = 0;
+  for (let k = 0; k < count; k++) {
+    if (p + 46 > b.length || b.readUInt32LE(p) !== 0x02014b50) return 'The ZIP directory of the package is damaged.';
+    const size = b.readUInt32LE(p + 24);
+    const nameLen = b.readUInt16LE(p + 28), extraLen = b.readUInt16LE(p + 30), commentLen = b.readUInt16LE(p + 32);
+    if (size === 0xffffffff) return 'The package uses ZIP64 sizes, which a Word document never needs. It was not unpacked.';
+    if (size > MAX_ENTRY_BYTES) return `One part of the package would unpack to ${Math.round(size / 1048576)} MB, over the limit of ${MAX_ENTRY_BYTES / 1048576} MB (a zip bomb or a damaged file). It was not unpacked.`;
+    total += size;
+    if (total > MAX_TOTAL_BYTES) return `The package would unpack to more than ${MAX_TOTAL_BYTES / 1048576} MB (a zip bomb or a damaged file). It was not unpacked.`;
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return null;
+}
+
 async function toText(job) {
   const ext = job.ext;
   if (job.kind === 'docx') {
+    const bomb = zipInflateCheck(Buffer.from(job.bytes));
+    if (bomb) return { ok: false, error: bomb };
     const r = await convertDocx(Buffer.from(job.bytes), { ext, maxImageBytes: 1, maxTotalImageBytes: 1 });
     if (!r.ok) return { ok: false, error: r.notice ? r.notice.title + (r.notice.detail ? '. ' + r.notice.detail : '') : 'The document did not open.' };
     // Pictures are left out of the text diff; keep a short marker with the size where each one was.
@@ -46,7 +74,7 @@ async function binary(job) {
   return { ok: true, ranges: d.ranges.length, more: d.more, diffBytes: d.diffBytes, sizeA: d.sizeA, sizeB: d.sizeB, leftLines: la, rightLines: lb };
 }
 
-parentPort.once('message', async (job) => {
+if (parentPort) parentPort.once('message', async (job) => {
   try {
     const result = job.kind === 'binary' ? await binary(job) : await toText(job);
     parentPort.postMessage({ result });
